@@ -1,0 +1,38 @@
+namespace: assessment
+
+frontend:
+  replicaCount: 2
+
+  image:
+    repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app
+    tag: latest
+
+  service:
+    type: ClusterIP
+    port: 80
+
+backend:
+  replicaCount: 2
+
+  image:
+    repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app
+    tag: latest
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+config:
+  APP_ENV: dev
+  APP_NAME: devops-assessment
+
+secret:
+  API_KEY: dummy-key
+
+ingress:
+  enabled: true
+  host: sparkintern.in
+hpa:
+  minReplicas: 2
+  maxReplicas: 5
+  cpuUtilization: 70

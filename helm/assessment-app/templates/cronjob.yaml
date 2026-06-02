@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+
+metadata:
+  name: assessment-cronjob
+  namespace: {{ .Values.namespace }}
+
+spec:
+  schedule: "*/5 * * * *"
+
+  jobTemplate:
+    spec:
+      template:
+        spec:
+
+          restartPolicy: OnFailure
+
+          containers:
+          - name: date-printer
+
+            image: busybox:latest
+
+            command:
+            - /bin/sh
+            - -c
+            - date
