@@ -33,7 +33,7 @@ config:
         Host                elasticsearch-master.logging.svc.cluster.local
         Port                9200
         HTTP_User           elastic
-        HTTP_Passwd         00JMAtFj0huKwYuH
+        HTTP_Passwd         {{ .secret.password}}
         tls                 On
         tls.verify          Off
         Logstash_Format     On
