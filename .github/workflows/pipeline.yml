@@ -79,11 +79,15 @@ jobs:
 
       - name: Terraform Plan
         working-directory: terraform/infrastructure
-        run: terraform plan -out=tfplan
+        run: |
+              terraform plan \
+                -var-file=terraform.tfvars \
+                -out=tfplan
 
       - name: Terraform Apply
         working-directory: terraform/infrastructure
-        run: terraform apply -auto-approve tfplan
+        run: |
+              terraform apply -auto-approve tfplan
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
