@@ -49,7 +49,7 @@ jobs:
       - name: Helm Template Validation
         run: helm template assessment-app helm/assessment-app
 
-      - name: Upload Artifacts
+      - name: Upload Helm Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: helm-chart
@@ -75,48 +75,50 @@ jobs:
 
       - name: Terraform Init
         working-directory: terraform/infrastructure
-        run: terraform init -backend-config=./environments/dev/backend.hcl
+        run: |
+          terraform init \
+            -backend-config="../environments/dev/backend.hcl"
 
       - name: Terraform Plan
         working-directory: terraform/infrastructure
         run: |
-              terraform plan \
-                -var-file=terraform.tfvars \
-                -out=tfplan
+          terraform plan \
+            -var-file="terraform.tfvars" \
+            -out=tfplan
 
       - name: Terraform Apply
         working-directory: terraform/infrastructure
         run: |
-              terraform apply -auto-approve tfplan
+          terraform apply -auto-approve tfplan
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Generate Image Tag
-        id: prep
-        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        id: tag
+        run: echo "tag=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
       - name: Build Backend Image
         run: |
           docker build \
-          -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ steps.prep.outputs.IMAGE_TAG }} \
-          ./backend
+            -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ steps.tag.outputs.tag }} \
+            ./backend
 
       - name: Build Frontend Image
         run: |
           docker build \
-          -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ steps.prep.outputs.IMAGE_TAG }} \
-          ./frontend
+            -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ steps.tag.outputs.tag }} \
+            ./frontend
 
       - name: Push Backend Image
         run: |
           docker push \
-          ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ steps.prep.outputs.IMAGE_TAG }}
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ steps.tag.outputs.tag }}
 
       - name: Push Frontend Image
         run: |
           docker push \
-          ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ steps.prep.outputs.IMAGE_TAG }}
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ steps.tag.outputs.tag }}
 
       - name: Configure kubectl
         run: |
@@ -132,14 +134,16 @@ jobs:
           helm upgrade --install assessment-app ./helm/assessment-app \
             --namespace assessment \
             --create-namespace \
-            --set backend.image.tag=backend-${{ steps.prep.outputs.IMAGE_TAG }} \
-            --set frontend.image.tag=frontend-${{ steps.prep.outputs.IMAGE_TAG }}
+            --set backend.image.repository=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }} \
+            --set backend.image.tag=backend-${{ steps.tag.outputs.tag }} \
+            --set frontend.image.repository=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }} \
+            --set frontend.image.tag=frontend-${{ steps.tag.outputs.tag }}
 
       - name: Verify Backend Rollout
-        run: kubectl rollout status deployment/backend -n assessment
+        run: kubectl rollout status deployment/backend -n assessment --timeout=300s
 
       - name: Verify Frontend Rollout
-        run: kubectl rollout status deployment/frontend -n assessment
+        run: kubectl rollout status deployment/frontend -n assessment --timeout=300s
 
       - name: Smoke Test API
         run: |
