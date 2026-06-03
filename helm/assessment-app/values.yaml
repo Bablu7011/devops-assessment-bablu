@@ -5,7 +5,7 @@ frontend:
 
   image:
     repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app
-    tag: frontend-v2
+    tag: latest
 
   service:
     type: ClusterIP
@@ -16,7 +16,7 @@ backend:
 
   image:
     repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app
-    tag: backend-v2
+    tag: latest
 
   service:
     type: ClusterIP

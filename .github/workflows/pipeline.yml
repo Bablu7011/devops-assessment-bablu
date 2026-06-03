@@ -4,23 +4,21 @@ on:
   pull_request:
     branches:
       - main
-
   push:
     branches:
       - main
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
   EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
 jobs:
   ci:
     name: CI Checks
-    runs-on: ubuntu-latest
-
     if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
@@ -30,32 +28,107 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
-        run: |
-          cd terraform
-          terraform init -backend=false
+        working-directory: terraform
+        run: terraform init -backend=false
 
       - name: Terraform Validate
-        run: |
-          cd terraform
-          terraform validate
+        working-directory: terraform
+        run: terraform validate
 
       - name: Build Backend Image
-        run: |
-          docker build -t backend-test ./backend
+        run: docker build -t backend-test ./backend
 
       - name: Build Frontend Image
-        run: |
-          docker build -t frontend-test ./frontend
+        run: docker build -t frontend-test ./frontend
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
-      - name: Helm Template
-        run: |
-          helm template assessment-app helm/assessment-app > rendered.yaml
+      - name: Helm Lint
+        run: helm lint helm/assessment-app
 
-      - name: Upload Rendered Manifest
+      - name: Helm Template Validation
+        run: helm template assessment-app helm/assessment-app
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rendered-manifest
-          path: rendered.yaml
+          name: helm-manifests
+          path: helm/assessment-app
+
+  cd:
+    name: CD Deploy
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init -backend-config=environments/dev/backend.hcl
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Generate Image Tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Build Backend Image
+        run: |
+          docker build -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ env.IMAGE_TAG }} ./backend
+
+      - name: Build Frontend Image
+        run: |
+          docker build -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ env.IMAGE_TAG }} ./frontend
+
+      - name: Push Backend Image
+        run: |
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ env.IMAGE_TAG }}
+
+      - name: Push Frontend Image
+        run: |
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ env.IMAGE_TAG }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy Application
+        run: |
+          helm upgrade --install assessment-app ./helm/assessment-app \
+            --namespace assessment \
+            --create-namespace \
+            --set backend.image.tag=backend-${{ env.IMAGE_TAG }} \
+            --set frontend.image.tag=frontend-${{ env.IMAGE_TAG }}
+
+      - name: Verify Backend Rollout
+        run: kubectl rollout status deployment/backend -n assessment
+
+      - name: Verify Frontend Rollout
+        run: kubectl rollout status deployment/frontend -n assessment
+
+      - name: Smoke Test
+        run: |
+          kubectl get pods -n assessment
+          kubectl get svc -n assessment
