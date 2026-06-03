@@ -19,11 +19,11 @@ jobs:
     name: CI Checks
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Terraform Validation
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -35,12 +35,14 @@ jobs:
         working-directory: terraform
         run: terraform validate
 
+      # Docker Build Test
       - name: Build Backend Image
         run: docker build -t backend-test ./backend
 
       - name: Build Frontend Image
         run: docker build -t frontend-test ./frontend
 
+      # Kubernetes Lint
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
@@ -50,21 +52,22 @@ jobs:
       - name: Helm Template Validation
         run: helm template assessment-app helm/assessment-app
 
-      - name: Upload Artifacts
+      # Upload Artifacts
+      - name: Upload Helm Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: helm-manifests
+          name: helm-chart
           path: helm/assessment-app
 
   cd:
-    name: CD Deploy
+    name: CD Deployment
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # AWS Authentication
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -72,45 +75,55 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Terraform Plan & Apply
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
         working-directory: terraform
-        run: terraform init -backend-config=environments/dev/backend.hcl
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan -out=tfplan
 
       - name: Terraform Apply
         working-directory: terraform
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve tfplan
 
+      # Login to Amazon ECR
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Generate Image Tag
       - name: Generate Image Tag
         run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      - name: Build Backend Image
+      # Build Docker Images
+      - name: Build Docker Images
         run: |
-          docker build -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ env.IMAGE_TAG }} ./backend
+          docker build \
+          -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ env.IMAGE_TAG }} \
+          ./backend
+          
+          docker build \
+          -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ env.IMAGE_TAG }} \
+          ./frontend
 
-      - name: Build Frontend Image
-        run: |
-          docker build -t ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ env.IMAGE_TAG }} ./frontend
-
-      - name: Push Backend Image
+      # Push Images
+      - name: Push Docker Images
         run: |
           docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:backend-${{ env.IMAGE_TAG }}
-
-      - name: Push Frontend Image
-        run: |
           docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:frontend-${{ env.IMAGE_TAG }}
 
+      # Configure kubectl
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
             --name ${{ env.EKS_CLUSTER_NAME }}
 
+      # Deploy to Kubernetes
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
@@ -122,13 +135,14 @@ jobs:
             --set backend.image.tag=backend-${{ env.IMAGE_TAG }} \
             --set frontend.image.tag=frontend-${{ env.IMAGE_TAG }}
 
+      # Rollout Verification
       - name: Verify Backend Rollout
         run: kubectl rollout status deployment/backend -n assessment
 
       - name: Verify Frontend Rollout
         run: kubectl rollout status deployment/frontend -n assessment
 
-      - name: Smoke Test
+      # Smoke Test API
+      - name: Smoke Test API
         run: |
-          kubectl get pods -n assessment
-          kubectl get svc -n assessment
+          curl -f http://sparkintern.in || exit 1
