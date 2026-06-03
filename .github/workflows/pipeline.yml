@@ -77,7 +77,7 @@ jobs:
         working-directory: terraform/infrastructure
         run: |
           terraform init \
-            -backend-config="../environments/dev/backend.hcl"
+            -backend-config="./environments/dev/backend.hcl"
 
       - name: Terraform Plan
         working-directory: terraform/infrastructure
