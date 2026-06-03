@@ -2,10 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
+  namespace: {{ .Values.namespace }}
 
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
-  namespace: {{ .Values.namespace }}
+  
 
   selector:
     matchLabels:
