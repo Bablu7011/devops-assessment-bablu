@@ -76,15 +76,25 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Backend Image
+      - name: Build Frontend Image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}/backend:${{ github.sha }} ./backend
-          docker push ${{ env.ECR_REGISTRY }}/backend:${{ github.sha }}
+          docker build \
+            -t ${{ env.ECR_REGISTRY }}/devops-assessment-app-dev:frontend-${{ github.sha }} \
+            ./frontend  
+              
+      - name: Push Frontend Image
+        run: |
+          docker push ${{ env.ECR_REGISTRY }}/devops-assessment-app-dev:frontend-${{ github.sha }}
 
-      - name: Build & Push Frontend Image
+      - name: Build Backend Image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}/frontend:${{ github.sha }} ./frontend
-          docker push ${{ env.ECR_REGISTRY }}/frontend:${{ github.sha }}
+          docker build \
+            -t ${{ env.ECR_REGISTRY }}/devops-assessment-app-dev:backend-${{ github.sha }} \
+            ./backend
+
+      - name: Push Backend Image
+        run: |
+          docker push ${{ env.ECR_REGISTRY }}/devops-assessment-app-dev:backend-${{ github.sha }}
 
   # ----------------------------------------------------
   # 3. Deployment Stage (Helm & K8s)
@@ -114,13 +124,16 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
-      - name: Deploy Application via Helm
+      - name: Deploy Application
         run: |
-          helm upgrade --install assessment-app ./helm/assessment-app \
+          helm upgrade --install assessment-app \
+            ./helm/assessment-app \
             --namespace assessment \
             --create-namespace \
-            --set backend.image.tag=${{ github.sha }} \
-            --set frontend.image.tag=${{ github.sha }}
+            --set backend.image.repository=${{ env.ECR_REGISTRY }}/devops-assessment-app-dev \
+            --set backend.image.tag=backend-${{ github.sha }} \
+            --set frontend.image.repository=${{ env.ECR_REGISTRY }}/devops-assessment-app-dev \
+            --set frontend.image.tag=frontend-${{ github.sha }}
 
       - name: Verify Application Rollout Status
         run: |
