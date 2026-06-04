@@ -1,15 +1,8 @@
-resource "aws_ecr_repository" "app" {
-  name = "${var.project_name}-app"
+module "ecr" {
 
-  image_scanning_configuration {
-    scan_on_push = true
-  }
+  source  = "clouddrove/ecr/aws"
+  version = "1.3.3"
 
-  force_delete = false
-
-  tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "bablu"
-  }
+  name        = var.repository_name
+  environment = var.environment
 }

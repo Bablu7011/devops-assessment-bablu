@@ -5,7 +5,7 @@ kind: Ingress
 
 metadata:
   name: assessment-ingress
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Release.Namespace }}
 
   annotations:
     kubernetes.io/ingress.class: alb
@@ -13,7 +13,7 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
 
 spec:
-  ingressClassName: alb
+  ingressClassName: nginx
 
   rules:
   - host: {{ .Values.ingress.host }}

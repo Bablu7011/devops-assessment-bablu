@@ -3,7 +3,7 @@ kind: CronJob
 
 metadata:
   name: assessment-cronjob
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Release.Namespace }}
 
 spec:
   schedule: "*/5 * * * *"

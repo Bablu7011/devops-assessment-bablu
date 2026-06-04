@@ -1,11 +1,11 @@
-namespace: assessment
+
 
 frontend:
   replicaCount: 2
 
   image:
-    repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app
-    tag: latest
+    repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app-dev
+    tag: frontend-v2
 
   service:
     type: ClusterIP
@@ -15,8 +15,8 @@ backend:
   replicaCount: 2
 
   image:
-    repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app
-    tag: latest
+    repository: 870968579099.dkr.ecr.ap-south-1.amazonaws.com/devops-assessment-app-dev
+    tag:  backend-v2
 
   service:
     type: ClusterIP

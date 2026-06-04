@@ -1,0 +1,134 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+
+jobs:
+  # ----------------------------------------------------
+  # 1. Infrastructure Stage (Terraform)
+  # ----------------------------------------------------
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/infrastructure
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          terraform init -backend-config=environments/dev/backend.hcl
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var-file=environments/dev/terraform.tfvars \
+            -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+  # ----------------------------------------------------
+  # 2. Build Artifacts Stage (Docker)
+  # ----------------------------------------------------
+  docker:
+    name: Build & Push Images
+    needs: terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Backend Image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/backend:${{ github.sha }} ./backend
+          docker push ${{ env.ECR_REGISTRY }}/backend:${{ github.sha }}
+
+      - name: Build & Push Frontend Image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/frontend:${{ github.sha }} ./frontend
+          docker push ${{ env.ECR_REGISTRY }}/frontend:${{ github.sha }}
+
+  # ----------------------------------------------------
+  # 3. Deployment Stage (Helm & K8s)
+  # ----------------------------------------------------
+  deploy:
+    name: Helm Deployment
+    needs: docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Configure Kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy Application via Helm
+        run: |
+          helm upgrade --install assessment-app ./helm/assessment-app \
+            --namespace assessment \
+            --create-namespace \
+            --set backend.image.tag=${{ github.sha }} \
+            --set frontend.image.tag=${{ github.sha }}
+
+      - name: Verify Application Rollout Status
+        run: |
+          kubectl rollout status deployment/backend -n assessment --timeout=300s
+          kubectl rollout status deployment/frontend -n assessment --timeout=300s
+
+      - name: Smoke Test & Cluster Status Check
+        run: |
+          kubectl get pods -n assessment
+          kubectl get svc -n assessment
+          kubectl get ingress -n assessment

@@ -3,8 +3,7 @@ kind: ServiceMonitor
 metadata:
   name: backend-monitor
   namespace: monitoring
-  labels:
-    release: monitoring
+
 spec:
   selector:
     matchLabels:
