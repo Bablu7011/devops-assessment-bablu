@@ -3,13 +3,15 @@ kind: Service
 metadata:
   name: backend-service
   namespace: {{ .Release.Namespace }}
-
+  labels:
+    app: backend
 spec:
   selector:
     app: backend
 
   ports:
-  - port: 3000
+  - name: http
+    port: 3000
     targetPort: 3000
 
   type: ClusterIP
