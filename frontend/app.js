@@ -25,7 +25,7 @@ app.get("/", async (req, res) => {
   <title>DevOps Assessment</title>
 </head>
 <body>
-  <h1>DevOps Assessment  Cloudmaven infotect by Bablu Intern</h1>
+  <h1>DevOps Assessment</h1>
 
   <h3>Backend Status</h3>
 
