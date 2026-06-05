@@ -153,7 +153,7 @@ kubectl get svc -n monitoring
 Port Forward Grafana Service:
 
 ```bash
-kubectl port-forward svc/monitoring-grafana \
+kubectl port-forward svc/prometheus-grafana \
 3000:80 \
 -n monitoring
 ```
@@ -191,7 +191,7 @@ Port Forward Prometheus Service:
 
 ```bash
 kubectl port-forward \
-svc/monitoring-kube-prometheus-prometheus \
+svc/prometheus-kube-prometheus-prometheus  \
 9090:9090 \
 -n monitoring
 ```
